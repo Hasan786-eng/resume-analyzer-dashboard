@@ -2,41 +2,31 @@ import streamlit as st
 import PyPDF2
 import docx
 import re
-import pandas as pd
 import matplotlib.pyplot as plt
 from collections import Counter
 
 # -------------------------------
-# CONFIG
+# CONFIG (SAAS LOOK)
 # -------------------------------
 st.set_page_config(page_title="HireFlow ATS", layout="wide")
 
-st.title("🚀 HireFlow ATS - Smart Resume Analyzer")
-st.markdown("AI-powered resume understanding + ATS scoring system")
+st.title("🚀 HireFlow ATS - Smart Resume Intelligence System")
+
+st.markdown("AI-powered structured resume extraction + ATS analysis")
 
 # -------------------------------
 # INPUTS
 # -------------------------------
 job_desc = st.text_area("📌 Paste Job Description")
 
-uploaded_files = st.file_uploader(
-    "📂 Upload Resumes",
-    type=["pdf", "docx"],
-    accept_multiple_files=True
-)
-
-# -------------------------------
-# TEXT CLEANER
-# -------------------------------
-def clean(text):
-    text = re.sub(r'[^a-zA-Z ]', ' ', text)
-    return text.lower().split()
+uploaded_file = st.file_uploader("📂 Upload Resume (PDF/DOCX)")
 
 # -------------------------------
 # EXTRACT TEXT
 # -------------------------------
-def extract(file):
+def extract_text(file):
     text = ""
+
     if file.type == "application/pdf":
         pdf = PyPDF2.PdfReader(file)
         for p in pdf.pages:
@@ -45,88 +35,144 @@ def extract(file):
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         doc = docx.Document(file)
         for para in doc.paragraphs:
-            text += para.text + " "
+            text += para.text + "\n"
+
     return text
 
 # -------------------------------
-# SCORE ENGINE (REALISTIC)
+# CLEAN TEXT
 # -------------------------------
-def calculate_score(resume_words, job_words):
+def clean(text):
+    return re.findall(r"[a-zA-Z]+", text.lower())
 
-    resume_set = set(resume_words)
-    job_set = set(job_words)
+# -------------------------------
+# SECTION EXTRACTION (SMART)
+# -------------------------------
+def extract_sections(text):
 
-    matched = resume_set.intersection(job_set)
+    sections = {
+        "skills": [],
+        "education": [],
+        "experience": [],
+        "languages": [],
+        "personal": []
+    }
 
-    # breakdown logic
-    skill_score = len(matched) / len(job_set) if job_set else 0
+    lines = text.split("\n")
 
-    experience_keywords = ["experience","worked","developed","built","managed","led"]
-    exp_score = sum([1 for w in resume_set if w in experience_keywords]) / 5
+    for line in lines:
+        l = line.lower()
 
-    education_keywords = ["bachelor","master","degree","university","college"]
-    edu_score = sum([1 for w in resume_set if w in education_keywords]) / 5
+        if "skill" in l:
+            sections["skills"].extend(clean(line))
 
-    keyword_density = len(resume_set) / 200  # normalization
+        elif "education" in l or "college" in l or "university" in l:
+            sections["education"].extend(clean(line))
 
-    final_score = (
-        skill_score * 0.5 +
-        exp_score * 0.2 +
-        edu_score * 0.1 +
-        keyword_density * 0.2
-    ) * 100
+        elif "experience" in l or "worked" in l:
+            sections["experience"].extend(clean(line))
 
-    return round(min(final_score, 100), 2), matched
+        elif "language" in l:
+            sections["languages"].extend(clean(line))
+
+        elif "name" in l or "email" in l or "phone" in l:
+            sections["personal"].append(line.strip())
+
+    return sections
+
+# -------------------------------
+# SCORE ENGINE
+# -------------------------------
+def score_section(resume_set, job_set):
+    match = resume_set.intersection(job_set)
+    return len(match), len(job_set - resume_set)
 
 # -------------------------------
 # PROCESS
 # -------------------------------
-results = []
+if uploaded_file and job_desc:
 
-if uploaded_files and job_desc:
+    resume_text = extract_text(uploaded_file)
+    sections = extract_sections(resume_text)
 
-    job_words = clean(job_desc)
-
-    for file in uploaded_files:
-
-        text = extract(file)
-        resume_words = clean(text)
-
-        score, matched = calculate_score(resume_words, job_words)
-
-        results.append({
-            "Candidate": file.name,
-            "ATS Score": score,
-            "Matched Skills": len(matched),
-        })
-
-    df = pd.DataFrame(results).sort_values(by="ATS Score", ascending=False)
+    job_words = set(clean(job_desc))
 
     # -------------------------------
-    # TABLE
+    # SECTION SCORES
     # -------------------------------
-    st.subheader("🏆 Candidate Ranking")
-    st.dataframe(df, use_container_width=True)
+    skill_match, skill_missing = score_section(set(sections["skills"]), job_words)
+    edu_match, _ = score_section(set(sections["education"]), job_words)
+    lang_match, _ = score_section(set(sections["languages"]), job_words)
+
+    # normalize scores
+    skill_score = min(skill_match * 10, 100)
+    edu_score = min(edu_match * 5, 100)
+    lang_score = min(lang_match * 10, 100)
 
     # -------------------------------
-    # TOP CANDIDATE
+    # LAYOUT
     # -------------------------------
-    top = df.iloc[0]
+    col1, col2, col3 = st.columns(3)
 
-    st.success(f"""
-    🥇 Top Candidate: {top['Candidate']}
-    📊 ATS Score: {top['ATS Score']}%
-    """)
+    col1.metric("Skills Match", f"{skill_score}%")
+    col2.metric("Education Match", f"{edu_score}%")
+    col3.metric("Language Match", f"{lang_score}%")
 
     # -------------------------------
-    # GRAPH - SCORE DISTRIBUTION
+    # ATS FINAL SCORE
     # -------------------------------
-    st.subheader("📊 Score Distribution")
+    final_score = (skill_score * 0.6 + edu_score * 0.25 + lang_score * 0.15)
+    st.subheader(f"📊 ATS Final Score: {round(final_score,2)}%")
+
+    # -------------------------------
+    # MISSING SKILLS
+    # -------------------------------
+    missing = job_words - set(sections["skills"])
+
+    st.subheader("❌ Missing Skills")
+    st.write(list(missing)[:20])
+
+    # -------------------------------
+    # STRUCTURED RESUME VIEW
+    # -------------------------------
+    st.subheader("📄 Structured Resume Extraction")
+
+    st.markdown("### 👤 Personal Details")
+    st.write(sections["personal"])
+
+    st.markdown("### 🧠 Skills")
+    st.write(sections["skills"])
+
+    st.markdown("### 🎓 Education")
+    st.write(sections["education"])
+
+    st.markdown("### 💼 Experience")
+    st.write(sections["experience"])
+
+    st.markdown("### 🌐 Languages")
+    st.write(sections["languages"])
+
+    # -------------------------------
+    # GRAPH (YOUR REQUIRED DESIGN)
+    # -------------------------------
+    st.subheader("📊 HireFlow ATS Breakdown Graph")
+
+    labels = ["Skills", "Education", "Language"]
+    values = [skill_score, edu_score, lang_score]
 
     fig, ax = plt.subplots()
-    ax.bar(df["Candidate"], df["ATS Score"])
-    plt.xticks(rotation=45, ha='right')
+
+    bars = ax.bar(labels, values)
+
+    # purple + white style
+    for bar in bars:
+        bar.set_color("#7B2CBF")  # purple
+
+    ax.set_facecolor("white")
+    fig.patch.set_facecolor("white")
+
+    plt.ylim(0, 100)
     st.pyplot(fig)
 
 else:
-    st.info("Upload resumes + job description to analyze")
+    st.info("Upload resume and paste job description")
