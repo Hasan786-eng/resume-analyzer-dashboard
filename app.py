@@ -1,135 +1,95 @@
 import streamlit as st
 import PyPDF2
+import docx
 import spacy
-from docx import Document
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
+from sklearn.feature_extraction.text import CountVectorizer
 import matplotlib.pyplot as plt
-import random
 
-# Page config
+# -------------------------------
+# Page Config
+# -------------------------------
 st.set_page_config(page_title="Resume Analyzer", layout="wide")
 
-# Load NLP model
-nlp = spacy.load("en_core_web_sm")
+st.title("📄 Resume Analyzer Dashboard")
 
-# ---------------------------
-# ML MODEL
-# ---------------------------
-data = [
-    ("python sql data analysis machine learning pandas numpy", "Data Science"),
-    ("html css javascript react frontend web development", "Web Development"),
-    ("recruitment hiring onboarding hr policies communication", "HR"),
-    ("aws docker kubernetes devops ci cd linux", "DevOps"),
-    ("excel power bi tableau data visualization sql", "Data Analyst"),
-    ("java spring boot backend api development", "Backend Developer")
-]
+# -------------------------------
+# Load spaCy model safely
+# -------------------------------
+@st.cache_resource
+def load_model():
+    return spacy.load("en_core_web_sm")
 
-texts = [x[0] for x in data]
-labels = [x[1] for x in data]
+nlp = load_model()
 
-vectorizer = TfidfVectorizer()
-X = vectorizer.fit_transform(texts)
+# -------------------------------
+# File Upload
+# -------------------------------
+uploaded_file = st.file_uploader("Upload your Resume (PDF or DOCX)", type=["pdf", "docx"])
 
-model = LogisticRegression()
-model.fit(X, labels)
+text = ""
 
-# ---------------------------
-# FILE READING
-# ---------------------------
-def extract_text_from_pdf(file):
-    reader = PyPDF2.PdfReader(file)
-    text = ""
-    for page in reader.pages:
-        if page.extract_text():
-            text += page.extract_text() + "\n"
-    return text
+# -------------------------------
+# Extract Text
+# -------------------------------
+if uploaded_file is not None:
+    if uploaded_file.type == "application/pdf":
+        pdf_reader = PyPDF2.PdfReader(uploaded_file)
+        for page in pdf_reader.pages:
+            text += page.extract_text() or ""
 
-def extract_text_from_docx(file):
-    doc = Document(file)
-    text = ""
-    for para in doc.paragraphs:
-        text += para.text + "\n"
-    return text
+    elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        doc = docx.Document(uploaded_file)
+        for para in doc.paragraphs:
+            text += para.text
 
-# ---------------------------
-# NAME EXTRACTION
-# ---------------------------
-def extract_name(text):
-    lines = [line.strip() for line in text.split("\n") if line.strip()]
-    if len(lines) > 1 and len(lines[0].split()) <= 3:
-        return lines[0] + " " + lines[1]
-    return lines[0] if lines else "Not Found"
+# -------------------------------
+# Analyze Resume
+# -------------------------------
+if text:
 
-# ---------------------------
-# SKILL EXTRACTION
-# ---------------------------
-skills_list = [
-    "python", "sql", "excel", "power bi", "tableau",
-    "data analysis", "data visualization", "machine learning",
-    "html", "css", "javascript", "react", "java",
-    "aws", "docker", "kubernetes"
-]
+    st.subheader("📊 Analysis")
 
-def extract_skills(text):
-    text = text.lower()
-    return [skill for skill in skills_list if skill in text]
-
-# ---------------------------
-# UI
-# ---------------------------
-st.title("📊 Resume Analyzer Dashboard")
-
-uploaded_file = st.file_uploader("Upload Resume", type=["pdf", "docx"])
-
-if uploaded_file:
-    # Read file
-    if uploaded_file.name.endswith(".pdf"):
-        resume_text = extract_text_from_pdf(uploaded_file)
-    else:
-        resume_text = extract_text_from_docx(uploaded_file)
-
-    # Process
-    name = extract_name(resume_text)
-    skills = extract_skills(resume_text)
-    role = model.predict(vectorizer.transform([resume_text]))[0]
-
-    # ---------------------------
-    # TOP SECTION (2 columns)
-    # ---------------------------
     col1, col2 = st.columns(2)
 
-    with col1:
-        st.subheader("👤 Name")
-        st.success(name)
+    # Word Count
+    word_count = len(text.split())
+    col1.metric("Total Words", word_count)
 
-        st.subheader("🎯 Predicted Role")
-        st.info(role)
+    # spaCy Processing
+    doc = nlp(text)
 
-    with col2:
-        st.subheader("🛠 Skills")
-        for skill in skills:
-            level = random.randint(60, 95) / 100  # fake % for UI
-            st.write(skill.upper())
-            st.progress(level)
+    skills = []
+    for token in doc:
+        if token.pos_ in ["NOUN", "PROPN"]:
+            skills.append(token.text.lower())
 
-    # ---------------------------
-    # CHART SECTION
-    # ---------------------------
-    st.subheader("📈 Skills Visualization")
+    # Remove duplicates
+    skills = list(set(skills))
 
-    if skills:
-        values = [random.randint(60, 100) for _ in skills]
+    col2.metric("Detected Keywords", len(skills))
 
-        plt.figure()
-        plt.barh(skills, values)
-        plt.xlabel("Proficiency")
-        plt.ylabel("Skills")
+    # -------------------------------
+    # Show Skills
+    # -------------------------------
+    st.subheader("🧠 Extracted Keywords")
+    st.write(", ".join(skills[:50]))
 
-        st.pyplot(plt)
+    # -------------------------------
+    # Plot Top Words
+    # -------------------------------
+    st.subheader("📈 Top Keywords Frequency")
 
-    # ---------------------------
-    # SUMMARY BOX
-    # ---------------------------
-    st.subheader("📌 Summary")
-    st.write(f"This resume is best suited for **{role}** roles based on extracted skills.")
+    vectorizer = CountVectorizer(stop_words='english', max_features=10)
+    X = vectorizer.fit_transform([text])
+
+    words = vectorizer.get_feature_names_out()
+    counts = X.toarray()[0]
+
+    fig, ax = plt.subplots()
+    ax.bar(words, counts)
+    plt.xticks(rotation=45)
+
+    st.pyplot(fig)
+
+else:
+    st.info("Upload a resume to start analysis.")
