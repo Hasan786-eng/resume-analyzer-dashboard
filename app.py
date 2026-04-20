@@ -9,25 +9,24 @@ import matplotlib.pyplot as plt
 # -------------------------------
 st.set_page_config(page_title="HireFlow ATS", layout="wide")
 
-st.title("🚀 HireFlow ATS - Resume Intelligence System")
-st.markdown("Structured resume extraction + ATS analysis dashboard")
+st.title("🚀 HireFlow ATS - Clean Resume Intelligence System")
 
 # -------------------------------
 # INPUTS
 # -------------------------------
 job_desc = st.text_area("📌 Paste Job Description")
-uploaded_file = st.file_uploader("📂 Upload Resume (PDF / DOCX)")
+file = st.file_uploader("📂 Upload Resume", type=["pdf", "docx"])
 
 # -------------------------------
-# TEXT EXTRACTION
+# EXTRACT TEXT
 # -------------------------------
 def extract_text(file):
     text = ""
 
     if file.type == "application/pdf":
         pdf = PyPDF2.PdfReader(file)
-        for page in pdf.pages:
-            text += page.extract_text() or ""
+        for p in pdf.pages:
+            text += p.extract_text() or ""
 
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         doc = docx.Document(file)
@@ -37,133 +36,98 @@ def extract_text(file):
     return text
 
 # -------------------------------
-# SECTION DETECTION (FIXED)
+# CLEAN LINE NORMALIZATION
 # -------------------------------
-def extract_sections(text):
+def normalize_lines(text):
+    return [line.strip() for line in text.split("\n") if len(line.strip()) > 2]
+
+# -------------------------------
+# SMART SECTION PARSER (FIXED)
+# -------------------------------
+def parse_resume(text):
 
     sections = {
         "skills": [],
         "education": [],
-        "experience": [],
         "languages": [],
         "personal": []
     }
 
     current = None
 
-    for line in text.split("\n"):
-        l = line.strip()
+    for line in normalize_lines(text):
+        l = line.lower()
 
-        if not l:
-            continue
-
-        low = l.lower()
-
-        if "skill" in low:
+        # detect headers properly
+        if "skill" in l:
             current = "skills"
             continue
-        elif "education" in low:
+        elif "education" in l or "qualification" in l:
             current = "education"
             continue
-        elif "experience" in low:
-            current = "experience"
-            continue
-        elif "language" in low:
+        elif "language" in l:
             current = "languages"
             continue
-        elif "name" in low or "email" in low or "phone" in low:
-            sections["personal"].append(l)
+
+        # personal detection (email/phone/name)
+        if "email" in l or "phone" in l or "@" in l:
+            sections["personal"].append(line)
             continue
 
         if current:
-            sections[current].append(l)
+            sections[current].append(line)
 
     return sections
 
 # -------------------------------
-# CLEAN WORDS
+# CLEAN SKILLS ONLY (NO JUNK WORDS)
 # -------------------------------
-def clean_words(text_list):
+def clean_items(list_data):
 
-    text = " ".join(text_list)
+    text = " ".join(list_data)
     words = re.findall(r"[a-zA-Z]+", text.lower())
 
     stopwords = {
-        "and","in","with","the","a","to","of","for","by","on","is",
-        "are","was","it","this","that","as","at","from","you","your",
+        "and","the","in","with","for","to","of","is","are","was",
         "skills","skill","experience","education","known","using",
-        "final","year","student","summary"
+        "bca","year","student","class","college","university"
     }
 
     return [w for w in words if w not in stopwords and len(w) > 2]
 
 # -------------------------------
-# ATS SCORING
+# MAIN
 # -------------------------------
-def ats_score(job_words, resume_words):
+if file and job_desc:
 
-    job_set = set(job_words)
-    resume_set = set(resume_words)
+    text = extract_text(file)
+    sections = parse_resume(text)
 
-    matched = job_set.intersection(resume_set)
-
-    score = (len(matched) / len(job_set)) * 100 if job_set else 0
-
-    missing = job_set - resume_set
-
-    return round(score, 2), matched, missing
-
-# -------------------------------
-# MAIN LOGIC
-# -------------------------------
-if uploaded_file and job_desc:
-
-    resume_text = extract_text(uploaded_file)
-    sections = extract_sections(resume_text)
-
-    job_words = re.findall(r"[a-zA-Z]+", job_desc.lower())
-
-    # clean sections
-    skills = clean_words(sections["skills"])
-    education = clean_words(sections["education"])
-    languages = clean_words(sections["languages"])
-
-    # ATS score based on skills mainly
-    score, matched, missing = ats_score(job_words, skills)
+    skills = clean_items(sections["skills"])
+    education = clean_items(sections["education"])
+    languages = clean_items(sections["languages"])
 
     # -------------------------------
-    # METRICS
+    # CLEAN DISPLAY (NO RAW LISTS)
     # -------------------------------
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("ATS Score", f"{score}%")
-    col2.metric("Matched Skills", len(matched))
-    col3.metric("Missing Skills", len(missing))
-
-    # -------------------------------
-    # STRUCTURED RESUME VIEW
-    # -------------------------------
-    st.subheader("📄 Structured Resume")
-
-    st.markdown("### 👤 Personal Details")
+    st.subheader("👤 Personal Details")
     st.write(sections["personal"] if sections["personal"] else "Not Found")
 
-    st.markdown("### 🧠 Skills")
-    st.write(list(set(skills))[:50])
+    st.subheader("🧠 Skills (Clean)")
+    st.write(sorted(set(skills)))
 
-    st.markdown("### 🎓 Education")
-    st.write(sections["education"] if sections["education"] else "Not Found")
+    st.subheader("🎓 Education")
+    st.write(sections["education"])
 
-    st.markdown("### 🌐 Languages")
-    st.write(list(set(languages)))
+    st.subheader("🌐 Languages")
+    st.write(languages)
 
     # -------------------------------
-    # GRAPH (FIXED + CLEAN)
+    # FIXED GRAPH (REAL VALUES ONLY)
     # -------------------------------
-    st.subheader("📊 HireFlow ATS Breakdown")
+    st.subheader("📊 HireFlow ATS Breakdown (Clean)")
 
     labels = ["Skills", "Education", "Languages"]
-
     values = [
         len(set(skills)),
         len(set(education)),
@@ -175,7 +139,7 @@ if uploaded_file and job_desc:
     bars = ax.bar(labels, values)
 
     for bar in bars:
-        bar.set_color("#7B2CBF")  # purple
+        bar.set_color("#7B2CBF")
 
     ax.set_facecolor("white")
     fig.patch.set_facecolor("white")
@@ -184,11 +148,5 @@ if uploaded_file and job_desc:
 
     st.pyplot(fig)
 
-    # -------------------------------
-    # MISSING SKILLS
-    # -------------------------------
-    st.subheader("❌ Missing Skills (from Job Description)")
-    st.write(list(missing)[:30])
-
 else:
-    st.info("Upload resume and paste job description to begin analysis")
+    st.info("Upload resume + job description")
