@@ -1,6 +1,6 @@
 streamlit
 PyPDF2
-spacy
+spacy==3.7.2
 scikit-learn
 python-docx
 matplotlib
