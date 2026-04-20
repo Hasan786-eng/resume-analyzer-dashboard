@@ -4,14 +4,25 @@ import docx
 from sklearn.feature_extraction.text import CountVectorizer
 import matplotlib.pyplot as plt
 
+# -------------------------------
+# Page Config
+# -------------------------------
 st.set_page_config(page_title="Resume Analyzer", layout="wide")
 
 st.title("📄 Resume Analyzer Dashboard")
 
-uploaded_file = st.file_uploader("Upload your Resume (PDF or DOCX)", type=["pdf", "docx"])
+st.markdown("Upload your resume (PDF or DOCX) to analyze keywords and stats.")
+
+# -------------------------------
+# File Upload
+# -------------------------------
+uploaded_file = st.file_uploader("Upload Resume", type=["pdf", "docx"])
 
 text = ""
 
+# -------------------------------
+# Extract Text
+# -------------------------------
 if uploaded_file is not None:
     if uploaded_file.type == "application/pdf":
         pdf_reader = PyPDF2.PdfReader(uploaded_file)
@@ -23,29 +34,43 @@ if uploaded_file is not None:
         for para in doc.paragraphs:
             text += para.text
 
-if text:
-    st.subheader("📊 Analysis")
+# -------------------------------
+# Analysis
+# -------------------------------
+if text and text.strip():
+
+    st.subheader("📊 Resume Insights")
 
     col1, col2 = st.columns(2)
 
     word_count = len(text.split())
     col1.metric("Total Words", word_count)
 
-    vectorizer = CountVectorizer(stop_words='english', max_features=20)
+    vectorizer = CountVectorizer(stop_words='english', max_features=10)
     X = vectorizer.fit_transform([text])
 
     words = vectorizer.get_feature_names_out()
     counts = X.toarray()[0]
 
-    col2.metric("Unique Keywords", len(words))
+    col2.metric("Top Keywords Found", len(words))
 
-    st.subheader("📈 Top Keywords")
+    # -------------------------------
+    # Graph Section (FIXED)
+    # -------------------------------
+    st.subheader("📈 Top Keywords Frequency")
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 5))  # improved size
+
     ax.bar(words, counts)
-    plt.xticks(rotation=45)
 
-    st.pyplot(fig)
+    ax.set_xlabel("Keywords")
+    ax.set_ylabel("Frequency")
+    ax.set_title("Most Important Keywords in Resume")
+
+    plt.xticks(rotation=45, ha='right')  # FIX alignment
+    plt.tight_layout()  # prevent overlap
+
+    st.pyplot(fig, use_container_width=True)
 
 else:
-    st.info("Upload a resume to start analysis.")
+    st.info("Upload a resume to see analysis.")
