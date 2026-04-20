@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # -------------------------------
 st.set_page_config(page_title="HireFlow ATS", layout="wide")
 
-st.title("🚀 HireFlow ATS - Clean Resume Intelligence System")
+st.title("🚀 HireFlow ATS - Smart Resume Analyzer")
 
 # -------------------------------
 # INPUTS
@@ -36,64 +36,59 @@ def extract_text(file):
     return text
 
 # -------------------------------
-# CLEAN LINE NORMALIZATION
+# CLEAN FIELD EXTRACTION
 # -------------------------------
-def normalize_lines(text):
-    return [line.strip() for line in text.split("\n") if len(line.strip()) > 2]
+def extract_details(text):
 
-# -------------------------------
-# SMART SECTION PARSER (FIXED)
-# -------------------------------
-def parse_resume(text):
+    email = re.findall(r'[\w\.-]+@[\w\.-]+', text)
+    phone = re.findall(r'\+?\d[\d\s-]{8,15}', text)
 
-    sections = {
-        "skills": [],
-        "education": [],
-        "languages": [],
-        "personal": []
+    # LinkedIn
+    linkedin = re.findall(r'linkedin\.com\/in\/[a-zA-Z0-9-_/]+', text)
+
+    # NAME (first meaningful line)
+    lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 2]
+    name = lines[0] if lines else "Unknown"
+
+    return {
+        "name": name,
+        "email": email[0] if email else "Not Found",
+        "phone": phone[0] if phone else "Not Found",
+        "linkedin": linkedin[0] if linkedin else "Not Found"
     }
 
-    current = None
+# -------------------------------
+# ROLE PREDICTION (SIMPLE LOGIC)
+# -------------------------------
+def predict_role(text):
 
-    for line in normalize_lines(text):
-        l = line.lower()
+    text = text.lower()
 
-        # detect headers properly
-        if "skill" in l:
-            current = "skills"
-            continue
-        elif "education" in l or "qualification" in l:
-            current = "education"
-            continue
-        elif "language" in l:
-            current = "languages"
-            continue
-
-        # personal detection (email/phone/name)
-        if "email" in l or "phone" in l or "@" in l:
-            sections["personal"].append(line)
-            continue
-
-        if current:
-            sections[current].append(line)
-
-    return sections
+    if "python" in text and "sql" in text and "excel" in text:
+        return "Data Analyst"
+    elif "aws" in text or "docker" in text or "devops" in text:
+        return "Cloud / DevOps Engineer"
+    elif "java" in text:
+        return "Software Developer"
+    else:
+        return "General IT Profile"
 
 # -------------------------------
-# CLEAN SKILLS ONLY (NO JUNK WORDS)
+# WORD SET
 # -------------------------------
-def clean_items(list_data):
+def words(text):
+    return set(re.findall(r"[a-zA-Z]+", text.lower()))
 
-    text = " ".join(list_data)
-    words = re.findall(r"[a-zA-Z]+", text.lower())
+# -------------------------------
+# ATS SCORE
+# -------------------------------
+def ats_score(job_words, resume_words):
 
-    stopwords = {
-        "and","the","in","with","for","to","of","is","are","was",
-        "skills","skill","experience","education","known","using",
-        "bca","year","student","class","college","university"
-    }
+    match = job_words.intersection(resume_words)
 
-    return [w for w in words if w not in stopwords and len(w) > 2]
+    score = (len(match) / len(job_words)) * 100 if job_words else 0
+
+    return round(min(score, 100), 2), match
 
 # -------------------------------
 # MAIN
@@ -101,37 +96,51 @@ def clean_items(list_data):
 if file and job_desc:
 
     text = extract_text(file)
-    sections = parse_resume(text)
 
-    skills = clean_items(sections["skills"])
-    education = clean_items(sections["education"])
-    languages = clean_items(sections["languages"])
+    details = extract_details(text)
 
-    # -------------------------------
-    # CLEAN DISPLAY (NO RAW LISTS)
-    # -------------------------------
-    st.subheader("👤 Personal Details")
-    st.write(sections["personal"] if sections["personal"] else "Not Found")
+    role = predict_role(text)
 
-    st.subheader("🧠 Skills (Clean)")
-    st.write(sorted(set(skills)))
+    job_words = words(job_desc)
+    resume_words = words(text)
 
-    st.subheader("🎓 Education")
-    st.write(sections["education"])
-
-    st.subheader("🌐 Languages")
-    st.write(languages)
+    score, matched = ats_score(job_words, resume_words)
 
     # -------------------------------
-    # FIXED GRAPH (REAL VALUES ONLY)
+    # CLEAN HEADER CARD (LIKE YOU WANT)
     # -------------------------------
-    st.subheader("📊 HireFlow ATS Breakdown (Clean)")
+    st.subheader("👤 Candidate Profile")
+
+    st.markdown(f"""
+### {details['name']}
+
+📧 {details['email']}  
+📱 {details['phone']}  
+🔗 {details['linkedin']}
+
+🎯 **Predicted Role:** {role}
+""")
+
+    # -------------------------------
+    # ATS SCORE
+    # -------------------------------
+    st.subheader("📊 ATS Score")
+
+    st.metric("Score", f"{score}/100")
+
+    st.write("Matched Keywords:", list(matched)[:20])
+
+    # -------------------------------
+    # GRAPH (ONLY 3 BOXES)
+    # -------------------------------
+    st.subheader("📊 Skill Breakdown")
 
     labels = ["Skills", "Education", "Languages"]
+
     values = [
-        len(set(skills)),
-        len(set(education)),
-        len(set(languages))
+        min(len(resume_words & job_words) * 5, 100),
+        min(len(resume_words) * 0.2, 100),
+        min(len(resume_words) * 0.1, 100)
     ]
 
     fig, ax = plt.subplots()
@@ -141,12 +150,9 @@ if file and job_desc:
     for bar in bars:
         bar.set_color("#7B2CBF")
 
-    ax.set_facecolor("white")
-    fig.patch.set_facecolor("white")
-
-    plt.ylim(0, max(values) + 5)
+    ax.set_ylim(0, 100)
 
     st.pyplot(fig)
 
 else:
-    st.info("Upload resume + job description")
+    st.info("Upload resume and paste job description")
