@@ -3,141 +3,130 @@ import PyPDF2
 import docx
 import re
 import pandas as pd
+import matplotlib.pyplot as plt
+from collections import Counter
 
 # -------------------------------
-# PAGE CONFIG (BRANDING)
+# CONFIG
 # -------------------------------
-st.set_page_config(
-    page_title="HireFlow ATS",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="HireFlow ATS", layout="wide")
+
+st.title("🚀 HireFlow ATS - Smart Resume Analyzer")
+st.markdown("AI-powered resume understanding + ATS scoring system")
 
 # -------------------------------
-# SIDEBAR (SAAS BRAND)
+# INPUTS
 # -------------------------------
-st.sidebar.title("📊 HireFlow ATS")
-st.sidebar.markdown("### AI Resume Screening Platform")
-st.sidebar.markdown("---")
-st.sidebar.info("Upload resumes and instantly rank candidates using ATS scoring.")
+job_desc = st.text_area("📌 Paste Job Description")
 
-# -------------------------------
-# MAIN HEADER
-# -------------------------------
-st.title("🚀 HireFlow ATS Platform")
-st.markdown("Smart AI-powered resume screening and candidate ranking system for HR teams.")
-
-# -------------------------------
-# JOB DESCRIPTION INPUT
-# -------------------------------
-job_desc = st.text_area("📌 Paste Job Description (Required for ATS scoring)")
-
-# -------------------------------
-# MULTIPLE FILE UPLOAD
-# -------------------------------
 uploaded_files = st.file_uploader(
-    "📂 Upload Candidate Resumes (PDF / DOCX)",
+    "📂 Upload Resumes",
     type=["pdf", "docx"],
     accept_multiple_files=True
 )
 
 # -------------------------------
-# CLEAN TEXT FUNCTION
+# TEXT CLEANER
 # -------------------------------
-def clean_text(txt):
-    txt = re.sub(r'[^a-zA-Z ]', ' ', txt)
-    return txt.lower().split()
+def clean(text):
+    text = re.sub(r'[^a-zA-Z ]', ' ', text)
+    return text.lower().split()
 
 # -------------------------------
-# EXTRACT TEXT FUNCTION
+# EXTRACT TEXT
 # -------------------------------
-def extract_text(file):
+def extract(file):
     text = ""
-
     if file.type == "application/pdf":
         pdf = PyPDF2.PdfReader(file)
-        for page in pdf.pages:
-            text += page.extract_text() or ""
+        for p in pdf.pages:
+            text += p.extract_text() or ""
 
     elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         doc = docx.Document(file)
         for para in doc.paragraphs:
             text += para.text + " "
-
     return text
 
 # -------------------------------
-# PROCESS LOGIC
+# SCORE ENGINE (REALISTIC)
+# -------------------------------
+def calculate_score(resume_words, job_words):
+
+    resume_set = set(resume_words)
+    job_set = set(job_words)
+
+    matched = resume_set.intersection(job_set)
+
+    # breakdown logic
+    skill_score = len(matched) / len(job_set) if job_set else 0
+
+    experience_keywords = ["experience","worked","developed","built","managed","led"]
+    exp_score = sum([1 for w in resume_set if w in experience_keywords]) / 5
+
+    education_keywords = ["bachelor","master","degree","university","college"]
+    edu_score = sum([1 for w in resume_set if w in education_keywords]) / 5
+
+    keyword_density = len(resume_set) / 200  # normalization
+
+    final_score = (
+        skill_score * 0.5 +
+        exp_score * 0.2 +
+        edu_score * 0.1 +
+        keyword_density * 0.2
+    ) * 100
+
+    return round(min(final_score, 100), 2), matched
+
+# -------------------------------
+# PROCESS
 # -------------------------------
 results = []
 
 if uploaded_files and job_desc:
 
-    job_words = set(clean_text(job_desc))
-
-    stopwords = {
-        "the","and","to","of","in","a","is","for","on","with",
-        "this","that","it","as","are","was","but","be","by","or",
-        "an","at","from","you","your"
-    }
+    job_words = clean(job_desc)
 
     for file in uploaded_files:
 
-        text = extract_text(file)
-        resume_words = set(clean_text(text))
+        text = extract(file)
+        resume_words = clean(text)
 
-        resume_words = {
-            w for w in resume_words
-            if w not in stopwords and len(w) > 2
-        }
-
-        matched = resume_words.intersection(job_words)
-        missing = job_words - resume_words
-
-        score = round((len(matched) / len(job_words)) * 100, 2) if job_words else 0
-
-        if score > 70:
-            verdict = "Strong Match"
-        elif score > 40:
-            verdict = "Moderate Match"
-        else:
-            verdict = "Weak Match"
+        score, matched = calculate_score(resume_words, job_words)
 
         results.append({
             "Candidate": file.name,
             "ATS Score": score,
             "Matched Skills": len(matched),
-            "Missing Skills": len(missing),
-            "Verdict": verdict
         })
 
     df = pd.DataFrame(results).sort_values(by="ATS Score", ascending=False)
 
     # -------------------------------
-    # DASHBOARD VIEW
+    # TABLE
     # -------------------------------
-    st.subheader("🏆 HireFlow Candidate Ranking Dashboard")
-
+    st.subheader("🏆 Candidate Ranking")
     st.dataframe(df, use_container_width=True)
 
+    # -------------------------------
     # TOP CANDIDATE
+    # -------------------------------
     top = df.iloc[0]
 
     st.success(f"""
-    🥇 Top Candidate: {top['Candidate']}  
-    📊 ATS Score: {top['ATS Score']}%  
-    🧠 Verdict: {top['Verdict']}
+    🥇 Top Candidate: {top['Candidate']}
+    📊 ATS Score: {top['ATS Score']}%
     """)
 
-    # DOWNLOAD REPORT
-    csv = df.to_csv(index=False).encode('utf-8')
+    # -------------------------------
+    # GRAPH - SCORE DISTRIBUTION
+    # -------------------------------
+    st.subheader("📊 Score Distribution")
 
-    st.download_button(
-        "⬇️ Download HireFlow ATS Report",
-        csv,
-        "hireflow_ats_report.csv",
-        "text/csv"
-    )
+    fig, ax = plt.subplots()
+    ax.bar(df["Candidate"], df["ATS Score"])
+    plt.xticks(rotation=45, ha='right')
+    st.pyplot(fig)
 
 else:
-    st.info("📌 Upload resumes and paste job description to start analysis.")
+    st.info("Upload resumes + job description to analyze")
