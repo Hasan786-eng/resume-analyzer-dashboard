@@ -1,76 +1,154 @@
 import streamlit as st
 import PyPDF2
 import docx
-from sklearn.feature_extraction.text import CountVectorizer
-import matplotlib.pyplot as plt
+import re
+import pandas as pd
+from collections import Counter
 
 # -------------------------------
-# Page Config
+# PAGE CONFIG (SAAS STYLE)
 # -------------------------------
-st.set_page_config(page_title="Resume Analyzer", layout="wide")
-
-st.title("📄 Resume Analyzer Dashboard")
-
-st.markdown("Upload your resume (PDF or DOCX) to analyze keywords and stats.")
-
-# -------------------------------
-# File Upload
-# -------------------------------
-uploaded_file = st.file_uploader("Upload Resume", type=["pdf", "docx"])
-
-text = ""
+st.set_page_config(
+    page_title="HR SaaS ATS Platform",
+    page_icon="📊",
+    layout="wide"
+)
 
 # -------------------------------
-# Extract Text
+# SIDEBAR (SAAS NAV)
 # -------------------------------
-if uploaded_file is not None:
-    if uploaded_file.type == "application/pdf":
-        pdf_reader = PyPDF2.PdfReader(uploaded_file)
-        for page in pdf_reader.pages:
+st.sidebar.title("📊 HR SaaS ATS")
+st.sidebar.markdown("Smart Resume Screening Platform")
+
+st.sidebar.markdown("---")
+st.sidebar.info("Upload multiple resumes and rank candidates automatically.")
+
+# -------------------------------
+# HEADER
+# -------------------------------
+st.title("🚀 SaaS HR ATS Platform")
+st.markdown("Upload multiple resumes and compare candidates instantly.")
+
+# -------------------------------
+# JOB DESCRIPTION
+# -------------------------------
+job_desc = st.text_area("📌 Paste Job Description (Required for ATS scoring)")
+
+# -------------------------------
+# MULTIPLE FILE UPLOAD
+# -------------------------------
+uploaded_files = st.file_uploader(
+    "Upload Resumes (Multiple PDF/DOCX)",
+    type=["pdf", "docx"],
+    accept_multiple_files=True
+)
+
+# -------------------------------
+# CLEAN FUNCTION
+# -------------------------------
+def clean_text(txt):
+    txt = re.sub(r'[^a-zA-Z ]', ' ', txt)
+    return txt.lower().split()
+
+# -------------------------------
+# EXTRACT TEXT
+# -------------------------------
+def extract_text(file):
+    text = ""
+
+    if file.type == "application/pdf":
+        pdf = PyPDF2.PdfReader(file)
+        for page in pdf.pages:
             text += page.extract_text() or ""
 
-    elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        doc = docx.Document(uploaded_file)
+    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        doc = docx.Document(file)
         for para in doc.paragraphs:
-            text += para.text
+            text += para.text + " "
+
+    return text
 
 # -------------------------------
-# Analysis
+# PROCESS
 # -------------------------------
-if text and text.strip():
+results = []
 
-    st.subheader("📊 Resume Insights")
+if uploaded_files and job_desc:
 
-    col1, col2 = st.columns(2)
+    job_words = set(clean_text(job_desc))
 
-    word_count = len(text.split())
-    col1.metric("Total Words", word_count)
+    for file in uploaded_files:
 
-    vectorizer = CountVectorizer(stop_words='english', max_features=10)
-    X = vectorizer.fit_transform([text])
+        text = extract_text(file)
+        resume_words = set(clean_text(text))
 
-    words = vectorizer.get_feature_names_out()
-    counts = X.toarray()[0]
+        # Remove junk words
+        stopwords = {
+            "the","and","to","of","in","a","is","for","on","with",
+            "this","that","it","as","are","was","but","be","by","or",
+            "an","at","from","you","your"
+        }
 
-    col2.metric("Top Keywords Found", len(words))
+        resume_words = {w for w in resume_words if w not in stopwords and len(w) > 2}
+
+        matched = resume_words.intersection(job_words)
+        missing = job_words - resume_words
+
+        score = round((len(matched) / len(job_words)) * 100, 2) if job_words else 0
+
+        # Simple AI-like summary
+        if score > 70:
+            verdict = "Strong Match"
+        elif score > 40:
+            verdict = "Moderate Match"
+        else:
+            verdict = "Weak Match"
+
+        results.append({
+            "Candidate": file.name,
+            "ATS Score": score,
+            "Matched Skills": len(matched),
+            "Missing Skills": len(missing),
+            "Verdict": verdict
+        })
 
     # -------------------------------
-    # Graph Section (FIXED)
+    # DATAFRAME
     # -------------------------------
-    st.subheader("📈 Top Keywords Frequency")
+    df = pd.DataFrame(results)
+    df = df.sort_values(by="ATS Score", ascending=False)
 
-    fig, ax = plt.subplots(figsize=(10, 5))  # improved size
+    # -------------------------------
+    # DASHBOARD
+    # -------------------------------
+    st.subheader("🏆 Candidate Ranking")
 
-    ax.bar(words, counts)
+    st.dataframe(df, use_container_width=True)
 
-    ax.set_xlabel("Keywords")
-    ax.set_ylabel("Frequency")
-    ax.set_title("Most Important Keywords in Resume")
+    # -------------------------------
+    # BEST CANDIDATE
+    # -------------------------------
+    st.subheader("🥇 Top Candidate")
 
-    plt.xticks(rotation=45, ha='right')  # FIX alignment
-    plt.tight_layout()  # prevent overlap
+    top = df.iloc[0]
 
-    st.pyplot(fig, use_container_width=True)
+    st.success(f"""
+    👤 {top['Candidate']}  
+    📊 ATS Score: {top['ATS Score']}%  
+    🧠 Verdict: {top['Verdict']}
+    """)
+
+    # -------------------------------
+    # DOWNLOAD REPORT
+    # -------------------------------
+    csv = df.to_csv(index=False).encode('utf-8')
+
+    st.download_button(
+        "⬇️ Download HR Report (CSV)",
+        csv,
+        "ats_report.csv",
+        "text/csv"
+    )
 
 else:
-    st.info("Upload a resume to see analysis.")
+    st.info("📌 Upload resumes + paste job description to start SaaS analysis.")
