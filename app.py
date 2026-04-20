@@ -3,34 +3,32 @@ import PyPDF2
 import docx
 import re
 import pandas as pd
-from collections import Counter
 
 # -------------------------------
-# PAGE CONFIG (SAAS STYLE)
+# PAGE CONFIG (BRANDING)
 # -------------------------------
 st.set_page_config(
-    page_title="HR SaaS ATS Platform",
+    page_title="HireFlow ATS",
     page_icon="📊",
     layout="wide"
 )
 
 # -------------------------------
-# SIDEBAR (SAAS NAV)
+# SIDEBAR (SAAS BRAND)
 # -------------------------------
-st.sidebar.title("📊 HR SaaS ATS")
-st.sidebar.markdown("Smart Resume Screening Platform")
-
+st.sidebar.title("📊 HireFlow ATS")
+st.sidebar.markdown("### AI Resume Screening Platform")
 st.sidebar.markdown("---")
-st.sidebar.info("Upload multiple resumes and rank candidates automatically.")
+st.sidebar.info("Upload resumes and instantly rank candidates using ATS scoring.")
 
 # -------------------------------
-# HEADER
+# MAIN HEADER
 # -------------------------------
-st.title("🚀 SaaS HR ATS Platform")
-st.markdown("Upload multiple resumes and compare candidates instantly.")
+st.title("🚀 HireFlow ATS Platform")
+st.markdown("Smart AI-powered resume screening and candidate ranking system for HR teams.")
 
 # -------------------------------
-# JOB DESCRIPTION
+# JOB DESCRIPTION INPUT
 # -------------------------------
 job_desc = st.text_area("📌 Paste Job Description (Required for ATS scoring)")
 
@@ -38,20 +36,20 @@ job_desc = st.text_area("📌 Paste Job Description (Required for ATS scoring)")
 # MULTIPLE FILE UPLOAD
 # -------------------------------
 uploaded_files = st.file_uploader(
-    "Upload Resumes (Multiple PDF/DOCX)",
+    "📂 Upload Candidate Resumes (PDF / DOCX)",
     type=["pdf", "docx"],
     accept_multiple_files=True
 )
 
 # -------------------------------
-# CLEAN FUNCTION
+# CLEAN TEXT FUNCTION
 # -------------------------------
 def clean_text(txt):
     txt = re.sub(r'[^a-zA-Z ]', ' ', txt)
     return txt.lower().split()
 
 # -------------------------------
-# EXTRACT TEXT
+# EXTRACT TEXT FUNCTION
 # -------------------------------
 def extract_text(file):
     text = ""
@@ -69,7 +67,7 @@ def extract_text(file):
     return text
 
 # -------------------------------
-# PROCESS
+# PROCESS LOGIC
 # -------------------------------
 results = []
 
@@ -77,26 +75,27 @@ if uploaded_files and job_desc:
 
     job_words = set(clean_text(job_desc))
 
+    stopwords = {
+        "the","and","to","of","in","a","is","for","on","with",
+        "this","that","it","as","are","was","but","be","by","or",
+        "an","at","from","you","your"
+    }
+
     for file in uploaded_files:
 
         text = extract_text(file)
         resume_words = set(clean_text(text))
 
-        # Remove junk words
-        stopwords = {
-            "the","and","to","of","in","a","is","for","on","with",
-            "this","that","it","as","are","was","but","be","by","or",
-            "an","at","from","you","your"
+        resume_words = {
+            w for w in resume_words
+            if w not in stopwords and len(w) > 2
         }
-
-        resume_words = {w for w in resume_words if w not in stopwords and len(w) > 2}
 
         matched = resume_words.intersection(job_words)
         missing = job_words - resume_words
 
         score = round((len(matched) / len(job_words)) * 100, 2) if job_words else 0
 
-        # Simple AI-like summary
         if score > 70:
             verdict = "Strong Match"
         elif score > 40:
@@ -112,43 +111,33 @@ if uploaded_files and job_desc:
             "Verdict": verdict
         })
 
-    # -------------------------------
-    # DATAFRAME
-    # -------------------------------
-    df = pd.DataFrame(results)
-    df = df.sort_values(by="ATS Score", ascending=False)
+    df = pd.DataFrame(results).sort_values(by="ATS Score", ascending=False)
 
     # -------------------------------
-    # DASHBOARD
+    # DASHBOARD VIEW
     # -------------------------------
-    st.subheader("🏆 Candidate Ranking")
+    st.subheader("🏆 HireFlow Candidate Ranking Dashboard")
 
     st.dataframe(df, use_container_width=True)
 
-    # -------------------------------
-    # BEST CANDIDATE
-    # -------------------------------
-    st.subheader("🥇 Top Candidate")
-
+    # TOP CANDIDATE
     top = df.iloc[0]
 
     st.success(f"""
-    👤 {top['Candidate']}  
+    🥇 Top Candidate: {top['Candidate']}  
     📊 ATS Score: {top['ATS Score']}%  
     🧠 Verdict: {top['Verdict']}
     """)
 
-    # -------------------------------
     # DOWNLOAD REPORT
-    # -------------------------------
     csv = df.to_csv(index=False).encode('utf-8')
 
     st.download_button(
-        "⬇️ Download HR Report (CSV)",
+        "⬇️ Download HireFlow ATS Report",
         csv,
-        "ats_report.csv",
+        "hireflow_ats_report.csv",
         "text/csv"
     )
 
 else:
-    st.info("📌 Upload resumes + paste job description to start SaaS analysis.")
+    st.info("📌 Upload resumes and paste job description to start analysis.")
