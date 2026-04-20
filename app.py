@@ -3,23 +3,23 @@ import PyPDF2
 import docx
 import re
 import matplotlib.pyplot as plt
+from collections import Counter
 
-# -------------------------------
+# ---------------------------
 # CONFIG
-# -------------------------------
+# ---------------------------
 st.set_page_config(page_title="HireFlow ATS", layout="wide")
 
-st.title("🚀 HireFlow ATS - Smart Resume Analyzer")
+st.title("🚀 HireFlow ATS - Skill Intelligence Dashboard")
 
-# -------------------------------
-# INPUTS
-# -------------------------------
-job_desc = st.text_area("📌 Paste Job Description")
-file = st.file_uploader("📂 Upload Resume", type=["pdf", "docx"])
+# ---------------------------
+# FILE INPUT
+# ---------------------------
+file = st.file_uploader("📂 Upload Resume (PDF / DOCX)", type=["pdf", "docx"])
 
-# -------------------------------
+# ---------------------------
 # EXTRACT TEXT
-# -------------------------------
+# ---------------------------
 def extract_text(file):
     text = ""
 
@@ -33,126 +33,75 @@ def extract_text(file):
         for para in doc.paragraphs:
             text += para.text + "\n"
 
-    return text
+    return text.lower()
 
-# -------------------------------
-# CLEAN FIELD EXTRACTION
-# -------------------------------
-def extract_details(text):
+# ---------------------------
+# CLEAN WORDS
+# ---------------------------
+def get_words(text):
+    return re.findall(r"[a-zA-Z]+", text)
 
-    email = re.findall(r'[\w\.-]+@[\w\.-]+', text)
-    phone = re.findall(r'\+?\d[\d\s-]{8,15}', text)
+# ---------------------------
+# MAIN
+# ---------------------------
+if file:
 
-    # LinkedIn
-    linkedin = re.findall(r'linkedin\.com\/in\/[a-zA-Z0-9-_/]+', text)
+    resume_text = extract_text(file)
+    words = get_words(resume_text)
 
-    # NAME (first meaningful line)
-    lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 2]
-    name = lines[0] if lines else "Unknown"
+    word_freq = Counter(words)
 
-    return {
-        "name": name,
-        "email": email[0] if email else "Not Found",
-        "phone": phone[0] if phone else "Not Found",
-        "linkedin": linkedin[0] if linkedin else "Not Found"
+    # remove noise words (stopwords)
+    stopwords = {
+        "and","the","in","with","for","to","of","is","are","was",
+        "a","an","on","at","by","this","that","it","as","be",
+        "skills","experience","education","resume","name","email"
     }
 
-# -------------------------------
-# ROLE PREDICTION (SIMPLE LOGIC)
-# -------------------------------
-def predict_role(text):
+    filtered = {
+        k: v for k, v in word_freq.items()
+        if k not in stopwords and len(k) > 2
+    }
 
-    text = text.lower()
+    # ---------------------------
+    # TOP SKILLS SELECTION
+    # ---------------------------
+    top_skills = dict(sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:12])
 
-    if "python" in text and "sql" in text and "excel" in text:
-        return "Data Analyst"
-    elif "aws" in text or "docker" in text or "devops" in text:
-        return "Cloud / DevOps Engineer"
-    elif "java" in text:
-        return "Software Developer"
-    else:
-        return "General IT Profile"
+    skills = list(top_skills.keys())
+    counts = list(top_skills.values())
 
-# -------------------------------
-# WORD SET
-# -------------------------------
-def words(text):
-    return set(re.findall(r"[a-zA-Z]+", text.lower()))
+    # convert frequency → score (0–100 scaling)
+    max_count = max(counts) if counts else 1
+    scores = [round((c / max_count) * 100) for c in counts]
 
-# -------------------------------
-# ATS SCORE
-# -------------------------------
-def ats_score(job_words, resume_words):
+    # ---------------------------
+    # DISPLAY TEXT
+    # ---------------------------
+    st.subheader("🧠 Extracted Skills (From Resume)")
 
-    match = job_words.intersection(resume_words)
+    for s in skills:
+        st.write("•", s)
 
-    score = (len(match) / len(job_words)) * 100 if job_words else 0
+    # ---------------------------
+    # GRAPH
+    # ---------------------------
+    st.subheader("📊 Skill Strength Analysis (Out of 100)")
 
-    return round(min(score, 100), 2), match
+    fig, ax = plt.subplots(figsize=(10, 5))
 
-# -------------------------------
-# MAIN
-# -------------------------------
-if file and job_desc:
-
-    text = extract_text(file)
-
-    details = extract_details(text)
-
-    role = predict_role(text)
-
-    job_words = words(job_desc)
-    resume_words = words(text)
-
-    score, matched = ats_score(job_words, resume_words)
-
-    # -------------------------------
-    # CLEAN HEADER CARD (LIKE YOU WANT)
-    # -------------------------------
-    st.subheader("👤 Candidate Profile")
-
-    st.markdown(f"""
-### {details['name']}
-
-📧 {details['email']}  
-📱 {details['phone']}  
-🔗 {details['linkedin']}
-
-🎯 **Predicted Role:** {role}
-""")
-
-    # -------------------------------
-    # ATS SCORE
-    # -------------------------------
-    st.subheader("📊 ATS Score")
-
-    st.metric("Score", f"{score}/100")
-
-    st.write("Matched Keywords:", list(matched)[:20])
-
-    # -------------------------------
-    # GRAPH (ONLY 3 BOXES)
-    # -------------------------------
-    st.subheader("📊 Skill Breakdown")
-
-    labels = ["Skills", "Education", "Languages"]
-
-    values = [
-        min(len(resume_words & job_words) * 5, 100),
-        min(len(resume_words) * 0.2, 100),
-        min(len(resume_words) * 0.1, 100)
-    ]
-
-    fig, ax = plt.subplots()
-
-    bars = ax.bar(labels, values)
+    bars = ax.bar(skills, scores)
 
     for bar in bars:
         bar.set_color("#7B2CBF")
 
     ax.set_ylim(0, 100)
+    ax.set_ylabel("Skill Strength Score")
+    ax.set_title("HireFlow - Resume Skill Intelligence")
+
+    plt.xticks(rotation=45, ha="right")
 
     st.pyplot(fig)
 
 else:
-    st.info("Upload resume and paste job description")
+    st.info("Upload a resume to generate skill analysis")
